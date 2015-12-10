@@ -14,6 +14,9 @@ gabor_threads.py [image filename]
 
 '''
 
+# Python 2/3 compatibility
+from __future__ import print_function
+
 import numpy as np
 import cv2
 from multiprocessing.pool import ThreadPool
@@ -48,15 +51,15 @@ if __name__ == '__main__':
     import sys
     from common import Timer
 
-    print __doc__
+    print(__doc__)
     try:
         img_fn = sys.argv[1]
     except:
-        img_fn = '../cpp/baboon.jpg'
+        img_fn = '../data/baboon.jpg'
 
     img = cv2.imread(img_fn)
     if img is None:
-        print 'Failed to load image file:', img_fn
+        print('Failed to load image file:', img_fn)
         sys.exit(1)
 
     filters = build_filters()
@@ -66,7 +69,7 @@ if __name__ == '__main__':
     with Timer('running multi-threaded'):
         res2 = process_threaded(img, filters)
 
-    print 'res1 == res2: ', (res1 == res2).all()
+    print('res1 == res2: ', (res1 == res2).all())
     cv2.imshow('img', img)
     cv2.imshow('result', res2)
     cv2.waitKey()

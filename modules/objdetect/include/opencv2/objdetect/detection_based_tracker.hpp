@@ -44,6 +44,7 @@
 #ifndef __OPENCV_OBJDETECT_DBT_HPP__
 #define __OPENCV_OBJDETECT_DBT_HPP__
 
+// After this condition removal update blacklist for bindings: modules/python/common.cmake
 #if defined(__linux__) || defined(LINUX) || defined(__APPLE__) || defined(__ANDROID__) || \
   (defined(__cplusplus) &&  __cplusplus > 201103L) || (defined(_MSC_VER) && _MSC_VER >= 1700)
 
@@ -51,6 +52,10 @@
 
 namespace cv
 {
+
+//! @addtogroup objdetect
+//! @{
+
 class CV_EXPORTS DetectionBasedTracker
 {
     public:
@@ -211,6 +216,9 @@ class CV_EXPORTS DetectionBasedTracker
         cv::Rect calcTrackedObjectPositionToShow(int i, ObjectStatus& status) const;
         void detectInRegion(const cv::Mat& img, const cv::Rect& r, std::vector<cv::Rect>& detectedObjectsInRegions);
 };
+
+//! @} objdetect
+
 } //end of cv namespace
 #endif
 

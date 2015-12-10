@@ -20,7 +20,7 @@ using namespace cv;
 static void print_help()
 {
     printf("\nDemo stereo matching converting L and R images into disparity and point clouds\n");
-    printf("\nUsage: stereo_match <left_image> <right_image> [--algorithm=bm|sgbm|hh] [--blocksize=<block_size>]\n"
+    printf("\nUsage: stereo_match <left_image> <right_image> [--algorithm=bm|sgbm|hh|sgbm3way] [--blocksize=<block_size>]\n"
            "[--max-disparity=<max_disparity>] [--scale=scale_factor>] [-i <intrinsic_filename>] [-e <extrinsic_filename>]\n"
            "[--no-display] [-o <disparity_image>] [-p <point_cloud_file>]\n");
 }
@@ -61,14 +61,14 @@ int main(int argc, char** argv)
     const char* disparity_filename = 0;
     const char* point_cloud_filename = 0;
 
-    enum { STEREO_BM=0, STEREO_SGBM=1, STEREO_HH=2, STEREO_VAR=3 };
+    enum { STEREO_BM=0, STEREO_SGBM=1, STEREO_HH=2, STEREO_VAR=3, STEREO_3WAY=4 };
     int alg = STEREO_SGBM;
     int SADWindowSize = 0, numberOfDisparities = 0;
     bool no_display = false;
     float scale = 1.f;
 
-    Ptr<StereoBM> bm = createStereoBM(16,9);
-    Ptr<StereoSGBM> sgbm = createStereoSGBM(0,16,3);
+    Ptr<StereoBM> bm = StereoBM::create(16,9);
+    Ptr<StereoSGBM> sgbm = StereoSGBM::create(0,16,3);
 
     for( int i = 1; i < argc; i++ )
     {
@@ -85,7 +85,8 @@ int main(int argc, char** argv)
             alg = strcmp(_alg, "bm") == 0 ? STEREO_BM :
                   strcmp(_alg, "sgbm") == 0 ? STEREO_SGBM :
                   strcmp(_alg, "hh") == 0 ? STEREO_HH :
-                  strcmp(_alg, "var") == 0 ? STEREO_VAR : -1;
+                  strcmp(_alg, "var") == 0 ? STEREO_VAR :
+                  strcmp(_alg, "sgbm3way") == 0 ? STEREO_3WAY : -1;
             if( alg < 0 )
             {
                 printf("Command-line parameter error: Unknown stereo algorithm\n\n");
@@ -159,7 +160,18 @@ int main(int argc, char** argv)
     Mat img1 = imread(img1_filename, color_mode);
     Mat img2 = imread(img2_filename, color_mode);
 
-    if( scale != 1.f )
+    if (img1.empty())
+    {
+        printf("Command-line parameter error: could not load the first input image file\n");
+        return -1;
+    }
+    if (img2.empty())
+    {
+        printf("Command-line parameter error: could not load the second input image file\n");
+        return -1;
+    }
+
+    if (scale != 1.f)
     {
         Mat temp1, temp2;
         int method = scale < 1 ? INTER_AREA : INTER_CUBIC;
@@ -246,7 +258,12 @@ int main(int argc, char** argv)
     sgbm->setSpeckleWindowSize(100);
     sgbm->setSpeckleRange(32);
     sgbm->setDisp12MaxDiff(1);
-    sgbm->setMode(alg == STEREO_HH ? StereoSGBM::MODE_HH : StereoSGBM::MODE_SGBM);
+    if(alg==STEREO_HH)
+        sgbm->setMode(StereoSGBM::MODE_HH);
+    else if(alg==STEREO_SGBM)
+        sgbm->setMode(StereoSGBM::MODE_SGBM);
+    else if(alg==STEREO_3WAY)
+        sgbm->setMode(StereoSGBM::MODE_SGBM_3WAY);
 
     Mat disp, disp8;
     //Mat img1p, img2p, dispp;
@@ -256,7 +273,7 @@ int main(int argc, char** argv)
     int64 t = getTickCount();
     if( alg == STEREO_BM )
         bm->compute(img1, img2, disp);
-    else if( alg == STEREO_SGBM || alg == STEREO_HH )
+    else if( alg == STEREO_SGBM || alg == STEREO_HH || alg == STEREO_3WAY )
         sgbm->compute(img1, img2, disp);
     t = getTickCount() - t;
     printf("Time elapsed: %fms\n", t*1000/getTickFrequency());

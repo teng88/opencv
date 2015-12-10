@@ -60,9 +60,9 @@ static void writeMatInBin( const Mat& mat, const string& filename )
         fwrite( (void*)&mat.rows, sizeof(int), 1, f );
         fwrite( (void*)&mat.cols, sizeof(int), 1, f );
         fwrite( (void*)&type, sizeof(int), 1, f );
-        int dataSize = (int)(mat.step * mat.rows * mat.channels());
+        int dataSize = (int)(mat.step * mat.rows);
         fwrite( (void*)&dataSize, sizeof(int), 1, f );
-        fwrite( (void*)mat.data, 1, dataSize, f );
+        fwrite( (void*)mat.ptr(), 1, dataSize, f );
         fclose(f);
     }
 }
@@ -82,13 +82,14 @@ static Mat readMatFromBin( const string& filename )
         int step = dataSize / rows / CV_ELEM_SIZE(type);
         CV_Assert(step >= cols);
 
-        Mat m = Mat(rows, step, type).colRange(0, cols);
+        Mat returnMat = Mat(rows, step, type).colRange(0, cols);
 
-        size_t elements_read = fread( m.ptr(), 1, dataSize, f );
+        size_t elements_read = fread( returnMat.ptr(), 1, dataSize, f );
         CV_Assert(elements_read == (size_t)(dataSize));
+
         fclose(f);
 
-        return m;
+        return returnMat;
     }
     return Mat();
 }
@@ -106,8 +107,6 @@ public:
 
     ~CV_DescriptorExtractorTest()
     {
-        if(!detector.empty())
-            detector.release();
     }
 protected:
     virtual void createDescriptorExtractor() {}
@@ -134,7 +133,7 @@ protected:
 
         stringstream ss;
         ss << "Max distance between valid and computed descriptors " << curMaxDist;
-        if( curMaxDist < maxDist )
+        if( curMaxDist <= maxDist )
             ss << "." << endl;
         else
         {
@@ -163,7 +162,8 @@ protected:
             ts->set_failed_test_info( cvtest::TS::FAIL_INVALID_TEST_DATA );
         }
 
-        image.create( 50, 50, CV_8UC3 );
+        RNG rng;
+        image = cvtest::randomMat(rng, Size(50, 50), CV_8UC3, 0, 255, false);
         try
         {
             dextractor->compute( image, keypoints, descriptors );
@@ -257,8 +257,8 @@ protected:
             fs.open( string(ts->get_data_path()) + FEATURES2D_DIR + "/keypoints.xml.gz", FileStorage::WRITE );
             if( fs.isOpened() )
             {
-                ORB fd;
-                fd.detect(img, keypoints);
+                Ptr<ORB> fd = ORB::create();
+                fd->detect(img, keypoints);
                 write( fs, "keypoints", keypoints );
             }
             else
@@ -314,53 +314,132 @@ private:
 
 TEST( Features2d_DescriptorExtractor_BRISK, regression )
 {
-    CV_DescriptorExtractorTest<Hamming> test( "descriptor-brisk",  (CV_DescriptorExtractorTest<Hamming>::DistanceType)2.f,
-                                                 DescriptorExtractor::create("BRISK") );
+    CV_DescriptorExtractorTest<Hamming> test( "descriptor-brisk",
+                                             (CV_DescriptorExtractorTest<Hamming>::DistanceType)2.f,
+                                            BRISK::create() );
     test.safe_run();
 }
 
 TEST( Features2d_DescriptorExtractor_ORB, regression )
 {
     // TODO adjust the parameters below
-    CV_DescriptorExtractorTest<Hamming> test( "descriptor-orb",  (CV_DescriptorExtractorTest<Hamming>::DistanceType)12.f,
-                                                 DescriptorExtractor::create("ORB") );
-    test.safe_run();
-}
-
-TEST( Features2d_DescriptorExtractor_FREAK, regression )
-{
-    // TODO adjust the parameters below
-    CV_DescriptorExtractorTest<Hamming> test( "descriptor-freak",  (CV_DescriptorExtractorTest<Hamming>::DistanceType)12.f,
-                                                 DescriptorExtractor::create("FREAK") );
-    test.safe_run();
-}
-
-TEST( Features2d_DescriptorExtractor_BRIEF, regression )
-{
-    CV_DescriptorExtractorTest<Hamming> test( "descriptor-brief",  1,
-                                               DescriptorExtractor::create("BRIEF") );
-    test.safe_run();
-}
-
-TEST( Features2d_DescriptorExtractor_OpponentBRIEF, regression )
-{
-    CV_DescriptorExtractorTest<Hamming> test( "descriptor-opponent-brief",  1,
-                                               DescriptorExtractor::create("OpponentBRIEF") );
+    CV_DescriptorExtractorTest<Hamming> test( "descriptor-orb",
+#if CV_NEON
+                                              (CV_DescriptorExtractorTest<Hamming>::DistanceType)25.f,
+#else
+                                              (CV_DescriptorExtractorTest<Hamming>::DistanceType)12.f,
+#endif
+                                             ORB::create() );
     test.safe_run();
 }
 
 TEST( Features2d_DescriptorExtractor_KAZE, regression )
 {
     CV_DescriptorExtractorTest< L2<float> > test( "descriptor-kaze",  0.03f,
-                                                 DescriptorExtractor::create("KAZE"),
-                                                 L2<float>(), FeatureDetector::create("KAZE"));
+                                                 KAZE::create(),
+                                                 L2<float>(), KAZE::create() );
     test.safe_run();
 }
 
 TEST( Features2d_DescriptorExtractor_AKAZE, regression )
 {
-    CV_DescriptorExtractorTest<Hamming> test( "descriptor-akaze",  (CV_DescriptorExtractorTest<Hamming>::DistanceType)12.f,
-                                              DescriptorExtractor::create("AKAZE"),
-                                              Hamming(), FeatureDetector::create("AKAZE"));
+    CV_DescriptorExtractorTest<Hamming> test( "descriptor-akaze",
+                                              (CV_DescriptorExtractorTest<Hamming>::DistanceType)12.f,
+                                              AKAZE::create(),
+                                              Hamming(), AKAZE::create());
     test.safe_run();
+}
+
+TEST( Features2d_DescriptorExtractor, batch )
+{
+    string path = string(cvtest::TS::ptr()->get_data_path() + "detectors_descriptors_evaluation/images_datasets/graf");
+    vector<Mat> imgs, descriptors;
+    vector<vector<KeyPoint> > keypoints;
+    int i, n = 6;
+    Ptr<ORB> orb = ORB::create();
+
+    for( i = 0; i < n; i++ )
+    {
+        string imgname = format("%s/img%d.png", path.c_str(), i+1);
+        Mat img = imread(imgname, 0);
+        imgs.push_back(img);
+    }
+
+    orb->detect(imgs, keypoints);
+    orb->compute(imgs, keypoints, descriptors);
+
+    ASSERT_EQ((int)keypoints.size(), n);
+    ASSERT_EQ((int)descriptors.size(), n);
+
+    for( i = 0; i < n; i++ )
+    {
+        EXPECT_GT((int)keypoints[i].size(), 100);
+        EXPECT_GT(descriptors[i].rows, 100);
+    }
+}
+
+TEST( Features2d_Feature2d, no_crash )
+{
+    const String& pattern = string(cvtest::TS::ptr()->get_data_path() + "shared/*.png");
+    vector<String> fnames;
+    glob(pattern, fnames, false);
+    sort(fnames.begin(), fnames.end());
+
+    Ptr<AKAZE> akaze = AKAZE::create();
+    Ptr<ORB> orb = ORB::create();
+    Ptr<KAZE> kaze = KAZE::create();
+    Ptr<BRISK> brisk = BRISK::create();
+    size_t i, n = fnames.size();
+    vector<KeyPoint> keypoints;
+    Mat descriptors;
+    orb->setMaxFeatures(5000);
+
+    for( i = 0; i < n; i++ )
+    {
+        printf("%d. image: %s:\n", (int)i, fnames[i].c_str());
+        if( strstr(fnames[i].c_str(), "MP.png") != 0 )
+            continue;
+        bool checkCount = strstr(fnames[i].c_str(), "templ.png") == 0;
+
+        Mat img = imread(fnames[i], -1);
+        printf("\tAKAZE ... "); fflush(stdout);
+        akaze->detectAndCompute(img, noArray(), keypoints, descriptors);
+        printf("(%d keypoints) ", (int)keypoints.size()); fflush(stdout);
+        if( checkCount )
+        {
+            EXPECT_GT((int)keypoints.size(), 0);
+        }
+        ASSERT_EQ(descriptors.rows, (int)keypoints.size());
+        printf("ok\n");
+
+        printf("\tKAZE ... "); fflush(stdout);
+        kaze->detectAndCompute(img, noArray(), keypoints, descriptors);
+        printf("(%d keypoints) ", (int)keypoints.size()); fflush(stdout);
+        if( checkCount )
+        {
+            EXPECT_GT((int)keypoints.size(), 0);
+        }
+        ASSERT_EQ(descriptors.rows, (int)keypoints.size());
+        printf("ok\n");
+
+        printf("\tORB ... "); fflush(stdout);
+        orb->detectAndCompute(img, noArray(), keypoints, descriptors);
+        printf("(%d keypoints) ", (int)keypoints.size()); fflush(stdout);
+        if( checkCount )
+        {
+            EXPECT_GT((int)keypoints.size(), 0);
+        }
+        ASSERT_EQ(descriptors.rows, (int)keypoints.size());
+        printf("ok\n");
+
+        printf("\tBRISK ... "); fflush(stdout);
+        brisk->detectAndCompute(img, noArray(), keypoints, descriptors);
+        printf("(%d keypoints) ", (int)keypoints.size()); fflush(stdout);
+        if( checkCount )
+        {
+            EXPECT_GT((int)keypoints.size(), 0);
+        }
+        ASSERT_EQ(descriptors.rows, (int)keypoints.size());
+        printf("ok\n");
+    }
 }

@@ -636,9 +636,18 @@ public:
                 vtypes[ninputvars] = VAR_CATEGORICAL;
         }
 
-        Mat(nsamples, noutputvars, CV_32F, &allresponses[0]).copyTo(tempResponses);
-        setData(tempSamples, ROW_SAMPLE, tempResponses, noArray(), noArray(),
-                noArray(), Mat(vtypes).clone(), tempMissing);
+        //If there are responses in the csv file, save them. If not, responses matrix will contain just zeros
+        if (noutputvars != 0){
+            Mat(nsamples, noutputvars, CV_32F, &allresponses[0]).copyTo(tempResponses);
+            setData(tempSamples, ROW_SAMPLE, tempResponses, noArray(), noArray(),
+                    noArray(), Mat(vtypes).clone(), tempMissing);
+        }
+        else{
+            Mat zero_mat(nsamples, 1, CV_32F, Scalar(0));
+            zero_mat.copyTo(tempResponses);
+            setData(tempSamples, ROW_SAMPLE, tempResponses, noArray(), noArray(),
+                    noArray(), noArray(), tempMissing);
+        }
         bool ok = !samples.empty();
         if(ok)
             std::swap(tempNameMap, nameMap);
@@ -762,7 +771,7 @@ public:
         else
         {
             Mat mask(1, nsamples, CV_8U);
-            uchar* mptr = mask.data;
+            uchar* mptr = mask.ptr();
             for( i = 0; i < nsamples; i++ )
                 mptr[i] = (uchar)(i < count);
             trainSampleIdx.create(1, count, CV_32S);
@@ -861,9 +870,9 @@ public:
     void getValues( int vi, InputArray _sidx, float* values ) const
     {
         Mat sidx = _sidx.getMat();
-        int i, n, nsamples = getNSamples();
+        int i, n = sidx.checkVector(1, CV_32S), nsamples = getNSamples();
         CV_Assert( 0 <= vi && vi < getNAllVars() );
-        CV_Assert( (n = sidx.checkVector(1, CV_32S)) >= 0 );
+        CV_Assert( n >= 0 );
         const int* s = n > 0 ? sidx.ptr<int>() : 0;
         if( n == 0 )
             n = nsamples;
@@ -898,7 +907,7 @@ public:
 
         CV_Assert( m > 0 ); // if m==0, vi is an ordered variable
         const int* cmap = &catMap.at<int>(ofs[0]);
-        bool fastMap = (m == cmap[m] - cmap[0]);
+        bool fastMap = (m == cmap[m - 1] - cmap[0] + 1);
 
         if( fastMap )
         {
@@ -938,8 +947,8 @@ public:
     {
         CV_Assert(buf != 0 && 0 <= sidx && sidx < getNSamples());
         Mat vidx = _vidx.getMat();
-        int i, n, nvars = getNAllVars();
-        CV_Assert( (n = vidx.checkVector(1, CV_32S)) >= 0 );
+        int i, n = vidx.checkVector(1, CV_32S), nvars = getNAllVars();
+        CV_Assert( n >= 0 );
         const int* vptr = n > 0 ? vidx.ptr<int>() : 0;
         if( n == 0 )
             n = nvars;

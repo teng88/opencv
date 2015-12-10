@@ -15,6 +15,9 @@ Keys:
   ESC   - exit
 '''
 
+# Python 2/3 compatibility
+from __future__ import print_function
+
 import numpy as np
 import cv2
 from common import Sketcher
@@ -24,13 +27,13 @@ if __name__ == '__main__':
     try:
         fn = sys.argv[1]
     except:
-        fn = '../cpp/fruits.jpg'
+        fn = '../data/fruits.jpg'
 
-    print __doc__
+    print(__doc__)
 
     img = cv2.imread(fn)
     if img is None:
-        print 'Failed to load image file:', fn
+        print('Failed to load image file:', fn)
         sys.exit(1)
 
     img_mark = img.copy()

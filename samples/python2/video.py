@@ -20,14 +20,17 @@ Usage:
      - synth:<params> for procedural video
 
 Synth examples:
-    synth:bg=../cpp/lena.jpg:noise=0.1
-    synth:class=chess:bg=../cpp/lena.jpg:noise=0.1:size=640x480
+    synth:bg=../data/lena.jpg:noise=0.1
+    synth:class=chess:bg=../data/lena.jpg:noise=0.1:size=640x480
 
 Keys:
     ESC    - exit
     SPACE  - save current frame to <shot path> directory
 
 '''
+
+# Python 2/3 compatibility
+from __future__ import print_function
 
 import numpy as np
 from numpy import pi, sin, cos
@@ -130,8 +133,8 @@ classes = dict(chess=Chess)
 
 presets = dict(
     empty = 'synth:',
-    lena = 'synth:bg=../cpp/lena.jpg:noise=0.1',
-    chess = 'synth:class=chess:bg=../cpp/lena.jpg:noise=0.1:size=640x480'
+    lena = 'synth:bg=../data/lena.jpg:noise=0.1',
+    chess = 'synth:class=chess:bg=../data/lena.jpg:noise=0.1:size=640x480'
 )
 
 
@@ -162,7 +165,7 @@ def create_capture(source = 0, fallback = presets['chess']):
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
     if cap is None or not cap.isOpened():
-        print 'Warning: unable to open video source: ', source
+        print('Warning: unable to open video source: ', source)
         if fallback is not None:
             return create_capture(fallback, None)
     return cap
@@ -171,7 +174,7 @@ if __name__ == '__main__':
     import sys
     import getopt
 
-    print __doc__
+    print(__doc__)
 
     args, sources = getopt.getopt(sys.argv[1:], '', 'shotdir=')
     args = dict(args)
@@ -194,6 +197,6 @@ if __name__ == '__main__':
             for i, img in enumerate(imgs):
                 fn = '%s/shot_%d_%03d.bmp' % (shotdir, i, shot_idx)
                 cv2.imwrite(fn, img)
-                print fn, 'saved'
+                print(fn, 'saved')
             shot_idx += 1
     cv2.destroyAllWindows()

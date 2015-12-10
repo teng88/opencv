@@ -1049,7 +1049,7 @@ cv::Mat cv::getStructuringElement(int shape, Size ksize, Point anchor)
 
     for( i = 0; i < ksize.height; i++ )
     {
-        uchar* ptr = elem.data + i*elem.step;
+        uchar* ptr = elem.ptr(i);
         int j1 = 0, j2 = 0;
 
         if( shape == MORPH_RECT || (shape == MORPH_CROSS && i == anchor.y) )
@@ -1136,10 +1136,11 @@ private:
     Scalar borderValue;
 };
 
-#if IPP_VERSION_X100 >= 801
-static bool IPPMorphReplicate(int op, const Mat &src, Mat &dst, const Mat &kernel,
+#ifdef HAVE_IPP
+static bool ipp_MorphReplicate(int op, const Mat &src, Mat &dst, const Mat &kernel,
                               const Size& ksize, const Point &anchor, bool rectKernel)
 {
+#if IPP_VERSION_X100 >= 810
     int type = src.type();
     const Mat* _src = &src;
     Mat temp;
@@ -1154,7 +1155,36 @@ static bool IPPMorphReplicate(int op, const Mat &src, Mat &dst, const Mat &kerne
 
     if (!rectKernel)
     {
-#if 1
+#if IPP_VERSION_X100 >= 900
+        if (((kernel.cols - 1) / 2 != anchor.x) || ((kernel.rows - 1) / 2 != anchor.y))
+            return false;
+        #define IPP_MORPH_CASE(cvtype, flavor, data_type) \
+        case cvtype: \
+            {\
+                int specSize = 0, bufferSize = 0;\
+                if (0 > ippiMorphologyBorderGetSize_##flavor(roiSize, kernelSize, &specSize, &bufferSize))\
+                    return false;\
+                IppiMorphState *pSpec = (IppiMorphState*)ippMalloc(specSize);\
+                Ipp8u *pBuffer = (Ipp8u*)ippMalloc(bufferSize);\
+                if (0 > ippiMorphologyBorderInit_##flavor(roiSize, kernel.ptr(), kernelSize, pSpec, pBuffer))\
+                {\
+                    ippFree(pBuffer);\
+                    ippFree(pSpec);\
+                    return false;\
+                }\
+                bool ok = false;\
+                if (op == MORPH_ERODE)\
+                    ok = (0 <= ippiErodeBorder_##flavor(_src->ptr<Ipp##data_type>(), (int)_src->step[0], dst.ptr<Ipp##data_type>(), (int)dst.step[0],\
+                                            roiSize, ippBorderRepl, 0, pSpec, pBuffer));\
+                else\
+                    ok = (0 <= ippiDilateBorder_##flavor(_src->ptr<Ipp##data_type>(), (int)_src->step[0], dst.ptr<Ipp##data_type>(), (int)dst.step[0],\
+                                            roiSize, ippBorderRepl, 0, pSpec, pBuffer));\
+                ippFree(pBuffer);\
+                ippFree(pSpec);\
+                return ok;\
+            }\
+            break;
+#else
         if (((kernel.cols - 1) / 2 != anchor.x) || ((kernel.rows - 1) / 2 != anchor.y))
             return false;
         #define IPP_MORPH_CASE(cvtype, flavor, data_type) \
@@ -1165,7 +1195,7 @@ static bool IPPMorphReplicate(int op, const Mat &src, Mat &dst, const Mat &kerne
                     return false;\
                 IppiMorphState *pSpec = (IppiMorphState*)ippMalloc(specSize);\
                 Ipp8u *pBuffer = (Ipp8u*)ippMalloc(bufferSize);\
-                if (0 > ippiMorphologyBorderInit_##flavor(roiSize.width, kernel.data, kernelSize, pSpec, pBuffer))\
+                if (0 > ippiMorphologyBorderInit_##flavor(roiSize.width, kernel.ptr(), kernelSize, pSpec, pBuffer))\
                 {\
                     ippFree(pBuffer);\
                     ippFree(pSpec);\
@@ -1173,45 +1203,18 @@ static bool IPPMorphReplicate(int op, const Mat &src, Mat &dst, const Mat &kerne
                 }\
                 bool ok = false;\
                 if (op == MORPH_ERODE)\
-                    ok = (0 <= ippiErodeBorder_##flavor((Ipp##data_type *)_src->data, (int)_src->step[0], (Ipp##data_type *)dst.data, (int)dst.step[0],\
+                    ok = (0 <= ippiErodeBorder_##flavor(_src->ptr<Ipp##data_type>(), (int)_src->step[0], dst.ptr<Ipp##data_type>(), (int)dst.step[0],\
                                             roiSize, ippBorderRepl, 0, pSpec, pBuffer));\
                 else\
-                    ok = (0 <= ippiDilateBorder_##flavor((Ipp##data_type *)_src->data, (int)_src->step[0], (Ipp##data_type *)dst.data, (int)dst.step[0],\
+                    ok = (0 <= ippiDilateBorder_##flavor(_src->ptr<Ipp##data_type>(), (int)_src->step[0], dst.ptr<Ipp##data_type>(), (int)dst.step[0],\
                                             roiSize, ippBorderRepl, 0, pSpec, pBuffer));\
                 ippFree(pBuffer);\
                 ippFree(pSpec);\
                 return ok;\
             }\
             break;
-#else
-        IppiPoint point = {anchor.x, anchor.y};
-        // this is case, which can be used with the anchor not in center of the kernel, but
-        // ippiMorphologyBorderGetSize_, ippiErodeBorderReplicate_ and ippiDilateBorderReplicate_ are deprecated.
-        #define IPP_MORPH_CASE(cvtype, flavor, data_type) \
-        case cvtype: \
-            {\
-                int specSize = 0;\
-                int bufferSize = 0;\
-                if (0 > ippiMorphologyGetSize_##flavor( roiSize.width, kernel.data kernelSize, &specSize))\
-                    return false;\
-                bool ok = false;\
-                IppiMorphState* pState = (IppiMorphState*)ippMalloc(specSize);\
-                if (ippiMorphologyInit_##flavor(roiSize.width, kernel.data, kernelSize, point, pState) >= 0)\
-                {\
-                    if (op == MORPH_ERODE)\
-                        ok = ippiErodeBorderReplicate_##flavor((Ipp##data_type *)_src->data, (int)_src->step[0],\
-                            (Ipp##data_type *)dst.data, (int)dst.step[0],\
-                            roiSize, ippBorderRepl, pState ) >= 0;\
-                    else\
-                        ok = ippiDilateBorderReplicate_##flavor((Ipp##data_type *)_src->data, (int)_src->step[0],\
-                            (Ipp##data_type *)dst.data, (int)dst.step[0],\
-                            roiSize, ippBorderRepl, pState ) >= 0;\
-                }\
-                ippFree(pState);\
-                return ok;\
-            }\
-            break;
 #endif
+        CV_SUPPRESS_DEPRECATED_START
         switch (type)
         {
         IPP_MORPH_CASE(CV_8UC1, 8u_C1R, 8u);
@@ -1223,14 +1226,43 @@ static bool IPPMorphReplicate(int op, const Mat &src, Mat &dst, const Mat &kerne
         default:
             ;
         }
-
+        CV_SUPPRESS_DEPRECATED_END
         #undef IPP_MORPH_CASE
     }
     else
     {
+#if IPP_VERSION_X100 != 900 // Problems with accuracy in 9.0.0
+#if IPP_VERSION_X100 >= 900
+        if (((kernelSize.width - 1) / 2 != anchor.x) || ((kernelSize.height - 1) / 2 != anchor.y)) // Arbitrary anchor is no longer supporeted since IPP 9.0.0
+            return false;
+
+        #define IPP_MORPH_CASE(cvtype, flavor, data_type, cn) \
+        case cvtype: \
+            {\
+                if (op == MORPH_ERODE)\
+                {\
+                    int bufSize = 0;\
+                    if (0 > ippiFilterMinBorderGetBufferSize(roiSize, kernelSize, ipp##data_type, cn, &bufSize))\
+                        return false;\
+                    AutoBuffer<uchar> buf(bufSize + 64);\
+                    uchar* buffer = alignPtr((uchar*)buf, 32);\
+                    return (0 <= ippiFilterMinBorder_##flavor(_src->ptr<Ipp##data_type>(), (int)_src->step[0], dst.ptr<Ipp##data_type>(), (int)dst.step[0], roiSize, kernelSize, ippBorderRepl, 0, buffer));\
+                }\
+                else\
+                {\
+                    int bufSize = 0;\
+                    if (0 > ippiFilterMaxBorderGetBufferSize(roiSize, kernelSize, ipp##data_type, cn, &bufSize))\
+                        return false;\
+                    AutoBuffer<uchar> buf(bufSize + 64);\
+                    uchar* buffer = alignPtr((uchar*)buf, 32);\
+                    return (0 <= ippiFilterMaxBorder_##flavor(_src->ptr<Ipp##data_type>(), (int)_src->step[0], dst.ptr<Ipp##data_type>(), (int)dst.step[0], roiSize, kernelSize, ippBorderRepl, 0, buffer));\
+                }\
+            }\
+            break;
+#else
         IppiPoint point = {anchor.x, anchor.y};
 
-        #define IPP_MORPH_CASE(cvtype, flavor, data_type) \
+        #define IPP_MORPH_CASE(cvtype, flavor, data_type, cn) \
         case cvtype: \
             {\
                 int bufSize = 0;\
@@ -1239,28 +1271,35 @@ static bool IPPMorphReplicate(int op, const Mat &src, Mat &dst, const Mat &kerne
                 AutoBuffer<uchar> buf(bufSize + 64);\
                 uchar* buffer = alignPtr((uchar*)buf, 32);\
                 if (op == MORPH_ERODE)\
-                    return (0 <= ippiFilterMinBorderReplicate_##flavor((Ipp##data_type *)_src->data, (int)_src->step[0], (Ipp##data_type *)dst.data, (int)dst.step[0], roiSize, kernelSize, point, buffer));\
-                return (0 <= ippiFilterMaxBorderReplicate_##flavor((Ipp##data_type *)_src->data, (int)_src->step[0], (Ipp##data_type *)dst.data, (int)dst.step[0], roiSize, kernelSize, point, buffer));\
+                    return (0 <= ippiFilterMinBorderReplicate_##flavor(_src->ptr<Ipp##data_type>(), (int)_src->step[0], dst.ptr<Ipp##data_type>(), (int)dst.step[0], roiSize, kernelSize, point, buffer));\
+                return (0 <= ippiFilterMaxBorderReplicate_##flavor(_src->ptr<Ipp##data_type>(), (int)_src->step[0], dst.ptr<Ipp##data_type>(), (int)dst.step[0], roiSize, kernelSize, point, buffer));\
             }\
             break;
+#endif
 
+        CV_SUPPRESS_DEPRECATED_START
         switch (type)
         {
-        IPP_MORPH_CASE(CV_8UC1, 8u_C1R, 8u);
-        IPP_MORPH_CASE(CV_8UC3, 8u_C3R, 8u);
-        IPP_MORPH_CASE(CV_8UC4, 8u_C4R, 8u);
-        IPP_MORPH_CASE(CV_32FC1, 32f_C1R, 32f);
-        IPP_MORPH_CASE(CV_32FC3, 32f_C3R, 32f);
-        IPP_MORPH_CASE(CV_32FC4, 32f_C4R, 32f);
+        IPP_MORPH_CASE(CV_8UC1, 8u_C1R, 8u, 1);
+        IPP_MORPH_CASE(CV_8UC3, 8u_C3R, 8u, 3);
+        IPP_MORPH_CASE(CV_8UC4, 8u_C4R, 8u, 4);
+        IPP_MORPH_CASE(CV_32FC1, 32f_C1R, 32f, 1);
+        IPP_MORPH_CASE(CV_32FC3, 32f_C3R, 32f, 3);
+        IPP_MORPH_CASE(CV_32FC4, 32f_C4R, 32f, 4);
         default:
             ;
         }
+        CV_SUPPRESS_DEPRECATED_END
         #undef IPP_MORPH_CASE
+#endif
     }
+#else
+    CV_UNUSED(op); CV_UNUSED(src); CV_UNUSED(dst); CV_UNUSED(kernel); CV_UNUSED(ksize); CV_UNUSED(anchor); CV_UNUSED(rectKernel);
+#endif
     return false;
 }
 
-static bool IPPMorphOp(int op, InputArray _src, OutputArray _dst,
+static bool ipp_MorphOp(int op, InputArray _src, OutputArray _dst,
     const Mat& _kernel, Point anchor, int iterations,
     int borderType, const Scalar &borderValue)
 {
@@ -1268,10 +1307,11 @@ static bool IPPMorphOp(int op, InputArray _src, OutputArray _dst,
     int type = src.type(), depth = CV_MAT_DEPTH(type), cn = CV_MAT_CN(type);
 
     if( !( depth == CV_8U || depth == CV_32F ) || !(cn == 1 || cn == 3 || cn == 4) ||
-        !( borderType == cv::BORDER_REPLICATE || (borderType == cv::BORDER_CONSTANT && borderValue == morphologyDefaultBorderValue()) )
-        || !( op == MORPH_DILATE || op == MORPH_ERODE) || _src.isSubmatrix() )
+        !( borderType == cv::BORDER_REPLICATE || (borderType == cv::BORDER_CONSTANT && borderValue == morphologyDefaultBorderValue() &&
+        kernel.size() == Size(3,3)) ) || !( op == MORPH_DILATE || op == MORPH_ERODE) || _src.isSubmatrix() )
         return false;
 
+    // In case BORDER_CONSTANT, IPPMorphReplicate works correct with kernels of size 3*3 only
     if( borderType == cv::BORDER_CONSTANT && kernel.data )
     {
         int x, y;
@@ -1297,7 +1337,7 @@ static bool IPPMorphOp(int op, InputArray _src, OutputArray _dst,
         }
 
     }
-    Size ksize = kernel.data ? kernel.size() : Size(3,3);
+    Size ksize = !kernel.empty() ? kernel.size() : Size(3,3);
 
     _dst.create( src.size(), src.type() );
     Mat dst = _dst.getMat();
@@ -1309,7 +1349,7 @@ static bool IPPMorphOp(int op, InputArray _src, OutputArray _dst,
     }
 
     bool rectKernel = false;
-    if( !kernel.data )
+    if( kernel.empty() )
     {
         ksize = Size(1+iterations*2,1+iterations*2);
         anchor = Point(iterations, iterations);
@@ -1330,7 +1370,7 @@ static bool IPPMorphOp(int op, InputArray _src, OutputArray _dst,
     if( iterations > 1 )
         return false;
 
-    return IPPMorphReplicate( op, src, dst, kernel, ksize, anchor, rectKernel );
+    return ipp_MorphReplicate( op, src, dst, kernel, ksize, anchor, rectKernel );
 }
 #endif
 
@@ -1371,7 +1411,7 @@ static bool ocl_morphSmall( InputArray _src, OutputArray _dst, InputArray _kerne
 
     const char * const borderMap[] = { "BORDER_CONSTANT", "BORDER_REPLICATE",
                                        "BORDER_REFLECT", 0, "BORDER_REFLECT_101" };
-    size_t globalsize[2] = { size.width, size.height };
+    size_t globalsize[2] = { (size_t)size.width, (size_t)size.height };
 
     UMat src = _src.getUMat();
     if (!isolated)
@@ -1433,7 +1473,7 @@ static bool ocl_morphSmall( InputArray _src, OutputArray _dst, InputArray _kerne
             "-D PX_PER_WI_X=%d -D PX_PER_WI_Y=%d -D PRIV_DATA_WIDTH=%d -D %s -D %s "
             "-D PX_LOAD_X_ITERATIONS=%d -D PX_LOAD_Y_ITERATIONS=%d "
             "-D srcT=%s -D srcT1=%s -D dstT=srcT -D dstT1=srcT1 -D WT=%s -D WT1=%s "
-            "-D convertToWT=%s -D convertToDstT=%s -D PROCESS_ELEM_=%s -D %s%s",
+            "-D convertToWT=%s -D convertToDstT=%s -D PX_LOAD_FLOAT_VEC_CONV=convert_%s -D PROCESS_ELEM_=%s -D %s%s",
             cn, anchor.x, anchor.y, ksize.width, ksize.height,
             pxLoadVecSize, pxLoadNumPixels, depth,
             pxPerWorkItemX, pxPerWorkItemY, privDataWidth, borderMap[borderType],
@@ -1444,6 +1484,7 @@ static bool ocl_morphSmall( InputArray _src, OutputArray _dst, InputArray _kerne
             haveExtraMat ? ocl::typeToStr(wdepth):"srcT1",//to prevent overflow - WT1
             haveExtraMat ? ocl::convertTypeStr(depth, wdepth, cn, cvt[0]) : "noconvert",//to prevent overflow - src to WT
             haveExtraMat ? ocl::convertTypeStr(wdepth, depth, cn, cvt[1]) : "noconvert",//to prevent overflow - WT to dst
+            ocl::typeToStr(CV_MAKE_TYPE(haveExtraMat ? wdepth : depth, pxLoadVecSize)), //PX_LOAD_FLOAT_VEC_CONV
             processing.c_str(), op2str[op],
             actual_op == op ? "" : cv::format(" -D %s", op2str[actual_op]).c_str());
 
@@ -1501,7 +1542,7 @@ static bool ocl_morphOp(InputArray _src, OutputArray _dst, InputArray _kernel,
     int type = _src.type(), depth = CV_MAT_DEPTH(type),
             cn = CV_MAT_CN(type), esz = CV_ELEM_SIZE(type);
     Mat kernel = _kernel.getMat();
-    Size ksize = kernel.data ? kernel.size() : Size(3, 3), ssize = _src.size();
+    Size ksize = !kernel.empty() ? kernel.size() : Size(3, 3), ssize = _src.size();
 
     bool doubleSupport = dev.doubleFPConfig() > 0;
     if ((depth == CV_64F && !doubleSupport) || borderType != BORDER_CONSTANT)
@@ -1510,23 +1551,7 @@ static bool ocl_morphOp(InputArray _src, OutputArray _dst, InputArray _kernel,
     bool haveExtraMat = !_extraMat.empty();
     CV_Assert(actual_op <= 3 || haveExtraMat);
 
-    // try to use OpenCL kernel adopted for small morph kernel
-    if (dev.isIntel() && !(dev.type() & ocl::Device::TYPE_CPU) &&
-        ((ksize.width < 5 && ksize.height < 5 && esz <= 4) ||
-         (ksize.width == 5 && ksize.height == 5 && cn == 1)) &&
-         (iterations == 1))
-    {
-        if (ocl_morphSmall(_src, _dst, _kernel, anchor, borderType, op, actual_op, _extraMat))
-            return true;
-    }
-
-    if (iterations == 0 || kernel.rows*kernel.cols == 1)
-    {
-        _src.copyTo(_dst);
-        return true;
-    }
-
-    if (!kernel.data)
+    if (kernel.empty())
     {
         kernel = getStructuringElement(MORPH_RECT, Size(1+iterations*2,1+iterations*2));
         anchor = Point(iterations, iterations);
@@ -1542,15 +1567,45 @@ static bool ocl_morphOp(InputArray _src, OutputArray _dst, InputArray _kernel,
         iterations = 1;
     }
 
+    // try to use OpenCL kernel adopted for small morph kernel
+    if (dev.isIntel() && !(dev.type() & ocl::Device::TYPE_CPU) &&
+        ((ksize.width < 5 && ksize.height < 5 && esz <= 4) ||
+         (ksize.width == 5 && ksize.height == 5 && cn == 1)) &&
+         (iterations == 1)
+#if defined __APPLE__
+         && cn == 1
+#endif
+         )
+    {
+        if (ocl_morphSmall(_src, _dst, kernel, anchor, borderType, op, actual_op, _extraMat))
+            return true;
+    }
+
+    if (iterations == 0 || kernel.rows*kernel.cols == 1)
+    {
+        _src.copyTo(_dst);
+        return true;
+    }
+
 #ifdef ANDROID
     size_t localThreads[2] = { 16, 8 };
 #else
     size_t localThreads[2] = { 16, 16 };
 #endif
-    size_t globalThreads[2] = { ssize.width, ssize.height };
+    size_t globalThreads[2] = { (size_t)ssize.width, (size_t)ssize.height };
+
+#ifdef __APPLE__
+    if( actual_op != MORPH_ERODE && actual_op != MORPH_DILATE )
+        localThreads[0] = localThreads[1] = 4;
+#endif
 
     if (localThreads[0]*localThreads[1] * 2 < (localThreads[0] + ksize.width - 1) * (localThreads[1] + ksize.height - 1))
         return false;
+
+#ifdef ANDROID
+    if (dev.isNVidia())
+        return false;
+#endif
 
     // build processing
     String processing;
@@ -1664,7 +1719,7 @@ static void morphOp( int op, InputArray _src, OutputArray _dst,
                      int borderType, const Scalar& borderValue )
 {
     Mat kernel = _kernel.getMat();
-    Size ksize = kernel.data ? kernel.size() : Size(3,3);
+    Size ksize = !kernel.empty() ? kernel.size() : Size(3,3);
     anchor = normalizeAnchor(anchor, ksize);
 
     CV_OCL_RUN(_dst.isUMat() && _src.dims() <= 2 && _src.channels() <= 4 &&
@@ -1679,7 +1734,7 @@ static void morphOp( int op, InputArray _src, OutputArray _dst,
         return;
     }
 
-    if (!kernel.data)
+    if (kernel.empty())
     {
         kernel = getStructuringElement(MORPH_RECT, Size(1+iterations*2,1+iterations*2));
         anchor = Point(iterations, iterations);
@@ -1695,10 +1750,7 @@ static void morphOp( int op, InputArray _src, OutputArray _dst,
         iterations = 1;
     }
 
-#if IPP_VERSION_X100 >= 801
-    if( IPPMorphOp(op, _src, _dst, kernel, anchor, iterations, borderType, borderValue) )
-        return;
-#endif
+    CV_IPP_RUN(IPP_VERSION_X100 >= 810, ipp_MorphOp(op, _src, _dst, kernel, anchor, iterations, borderType, borderValue))
 
     Mat src = _src.getMat();
     _dst.create( src.size(), src.type() );
@@ -1798,9 +1850,14 @@ static bool ocl_morphologyEx(InputArray _src, OutputArray _dst, int op,
 #endif
 
 void cv::morphologyEx( InputArray _src, OutputArray _dst, int op,
-                       InputArray kernel, Point anchor, int iterations,
+                       InputArray _kernel, Point anchor, int iterations,
                        int borderType, const Scalar& borderValue )
 {
+    Mat kernel = _kernel.getMat();
+    if (kernel.empty())
+    {
+        kernel = getStructuringElement(MORPH_RECT, Size(3,3), Point(1,1));
+    }
 #ifdef HAVE_OPENCL
     Size ksize = kernel.size();
     anchor = normalizeAnchor(anchor, ksize);
@@ -1814,6 +1871,8 @@ void cv::morphologyEx( InputArray _src, OutputArray _dst, int op,
     Mat src = _src.getMat(), temp;
     _dst.create(src.size(), src.type());
     Mat dst = _dst.getMat();
+
+    Mat k1, k2, e1, e2;		//only for hit and miss op
 
     switch( op )
     {
@@ -1850,6 +1909,24 @@ void cv::morphologyEx( InputArray _src, OutputArray _dst, int op,
         erode( temp, temp, kernel, anchor, iterations, borderType, borderValue );
         dst = temp - src;
         break;
+    case MORPH_HITMISS:
+        CV_Assert(src.type() == CV_8UC1);
+        k1 = (kernel == 1);
+        k2 = (kernel == -1);
+        if (countNonZero(k1) <= 0)
+            e1 = src;
+        else
+            erode(src, e1, k1, anchor, iterations, borderType, borderValue);
+        if (countNonZero(k2) <= 0)
+            e2 = src;
+        else
+        {
+            Mat src_complement;
+            bitwise_not(src, src_complement);
+            erode(src_complement, e2, k2, anchor, iterations, borderType, borderValue);
+        }
+        dst = e1 & e2;
+        break;
     default:
         CV_Error( CV_StsBadArg, "unknown morphological operation" );
     }
@@ -1885,7 +1962,7 @@ cvCreateStructuringElementEx( int cols, int rows,
     {
         cv::Mat elem = cv::getStructuringElement(shape, ksize, anchor);
         for( i = 0; i < size; i++ )
-            element->values[i] = elem.data[i];
+            element->values[i] = elem.ptr()[i];
     }
 
     return element;
@@ -1914,7 +1991,7 @@ static void convertConvKernel( const IplConvKernel* src, cv::Mat& dst, cv::Point
 
     int i, size = src->nRows*src->nCols;
     for( i = 0; i < size; i++ )
-        dst.data[i] = (uchar)(src->values[i] != 0);
+        dst.ptr()[i] = (uchar)(src->values[i] != 0);
 }
 
 

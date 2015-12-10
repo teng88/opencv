@@ -19,16 +19,19 @@ Usage:
     ESC   - exit
 
 Examples:
-  deconvolution.py --angle 135 --d 22  data/licenseplate_motion.jpg
+  deconvolution.py --angle 135 --d 22  ../data/licenseplate_motion.jpg
     (image source: http://www.topazlabs.com/infocus/_images/licenseplate_compare.jpg)
 
-  deconvolution.py --angle 86 --d 31  data/text_motion.jpg
-  deconvolution.py --circle --d 19  data/text_defocus.jpg
+  deconvolution.py --angle 86 --d 31  ../data/text_motion.jpg
+  deconvolution.py --circle --d 19  ../data/text_defocus.jpg
     (image source: compact digital photo camera, no artificial distortion)
 
 
 [1] http://en.wikipedia.org/wiki/Wiener_deconvolution
 '''
+
+# Python 2/3 compatibility
+from __future__ import print_function
 
 import numpy as np
 import cv2
@@ -63,20 +66,20 @@ def defocus_kernel(d, sz=65):
 
 
 if __name__ == '__main__':
-    print __doc__
+    print(__doc__)
     import sys, getopt
     opts, args = getopt.getopt(sys.argv[1:], '', ['circle', 'angle=', 'd=', 'snr='])
     opts = dict(opts)
     try:
         fn = args[0]
     except:
-        fn = 'data/licenseplate_motion.jpg'
+        fn = '../data/licenseplate_motion.jpg'
 
     win = 'deconvolution'
 
     img = cv2.imread(fn, 0)
     if img is None:
-        print 'Failed to load fn1:', fn1
+        print('Failed to load fn1:', fn1)
         sys.exit(1)
 
     img = np.float32(img)/255.0
@@ -119,7 +122,7 @@ if __name__ == '__main__':
     update(None)
 
     while True:
-        ch = cv2.waitKey()
+        ch = cv2.waitKey() & 0xFF
         if ch == 27:
             break
         if ch == ord(' '):

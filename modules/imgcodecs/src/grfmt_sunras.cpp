@@ -96,7 +96,7 @@ bool  SunRasterDecoder::readHeader()
             (m_encoding == RAS_OLD || m_encoding == RAS_STANDARD ||
              (m_type == RAS_BYTE_ENCODED && m_bpp == 8) || m_type == RAS_FORMAT_RGB) &&
             ((m_maptype == RMT_NONE && m_maplength == 0) ||
-             (m_maptype == RMT_EQUAL_RGB && m_maplength <= palSize && m_bpp <= 8)))
+             (m_maptype == RMT_EQUAL_RGB && m_maplength <= palSize && m_maplength > 0 && m_bpp <= 8)))
         {
             memset( m_palette, 0, sizeof(m_palette));
 
@@ -155,7 +155,7 @@ bool  SunRasterDecoder::readHeader()
 bool  SunRasterDecoder::readData( Mat& img )
 {
     int color = img.channels() > 1;
-    uchar* data = img.data;
+    uchar* data = img.ptr();
     int step = (int)img.step;
     uchar  gray_palette[256];
     bool   result = false;
@@ -414,7 +414,7 @@ bool  SunRasterEncoder::write( const Mat& img, const std::vector<int>& )
         strm.putDWord( 0 );
 
         for( y = 0; y < height; y++ )
-            strm.putBytes( img.data + img.step*y, fileStep );
+            strm.putBytes( img.ptr(y), fileStep );
 
         strm.close();
         result = true;

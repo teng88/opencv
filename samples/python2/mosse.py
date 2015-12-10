@@ -21,6 +21,14 @@ Keys:
     http://www.cs.colostate.edu/~bolme/publications/Bolme2010Tracking.pdf
 '''
 
+# Python 2/3 compatibility
+from __future__ import print_function
+import sys
+PY3 = sys.version_info[0] == 3
+
+if PY3:
+    xrange = range
+
 import numpy as np
 import cv2
 from common import draw_str, RectSelector
@@ -168,7 +176,7 @@ class App:
             self.rect_sel.draw(vis)
 
             cv2.imshow('frame', vis)
-            ch = cv2.waitKey(10)
+            ch = cv2.waitKey(10) & 0xFF
             if ch == 27:
                 break
             if ch == ord(' '):
@@ -178,7 +186,7 @@ class App:
 
 
 if __name__ == '__main__':
-    print __doc__
+    print (__doc__)
     import sys, getopt
     opts, args = getopt.getopt(sys.argv[1:], '', ['pause'])
     opts = dict(opts)

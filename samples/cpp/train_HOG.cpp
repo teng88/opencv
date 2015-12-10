@@ -37,7 +37,7 @@ void get_svm_detector(const Ptr<SVM>& svm, vector< float > & hog_detector )
     hog_detector.clear();
 
     hog_detector.resize(sv.cols + 1);
-    memcpy(&hog_detector[0], sv.data, sv.cols*sizeof(hog_detector[0]));
+    memcpy(&hog_detector[0], sv.ptr(), sv.cols*sizeof(hog_detector[0]));
     hog_detector[sv.cols] = (float)-rho;
 }
 
@@ -94,7 +94,7 @@ void load_images( const string & prefix, const string & filename, vector< Mat > 
             break;
         }
         Mat img = imread( (prefix+line).c_str() ); // load the image
-        if( !img.data ) // invalid image, just skip it.
+        if( img.empty() ) // invalid image, just skip it.
             continue;
 #ifdef _DEBUG
         imshow( "image", img );
@@ -141,7 +141,7 @@ Mat get_hogdescriptor_visu(const Mat& color_origImg, vector<float>& descriptorVa
 
     int cellSize        = 8;
     int gradientBinSize = 9;
-    float radRangeForOneBin = (float)(CV_PI/(float)gradientBinSize); // dividing 180° into 9 bins, how large (in rad) is one bin?
+    float radRangeForOneBin = (float)(CV_PI/(float)gradientBinSize); // dividing 180 into 9 bins, how large (in rad) is one bin?
 
     // prepare data structure: 9 orientation / gradient strenghts for each cell
     int cells_in_x_dir = DIMX / cellSize;
@@ -313,23 +313,23 @@ void compute_hog( const vector< Mat > & img_lst, vector< Mat > & gradient_lst, c
 
 void train_svm( const vector< Mat > & gradient_lst, const vector< int > & labels )
 {
-    /* Default values to train SVM */
-    SVM::Params params;
-    params.coef0 = 0.0;
-    params.degree = 3;
-    params.termCrit.epsilon = 1e-3;
-    params.gamma = 0;
-    params.kernelType = SVM::LINEAR;
-    params.nu = 0.5;
-    params.p = 0.1; // for EPSILON_SVR, epsilon in loss function?
-    params.C = 0.01; // From paper, soft classifier
-    params.svmType = SVM::EPS_SVR; // C_SVC; // EPSILON_SVR; // may be also NU_SVR; // do regression task
 
     Mat train_data;
     convert_to_ml( gradient_lst, train_data );
 
     clog << "Start training...";
-    Ptr<SVM> svm = StatModel::train<SVM>(train_data, ROW_SAMPLE, Mat(labels), params);
+    Ptr<SVM> svm = SVM::create();
+    /* Default values to train SVM */
+    svm->setCoef0(0.0);
+    svm->setDegree(3);
+    svm->setTermCriteria(TermCriteria( CV_TERMCRIT_ITER+CV_TERMCRIT_EPS, 1000, 1e-3 ));
+    svm->setGamma(0);
+    svm->setKernel(SVM::LINEAR);
+    svm->setNu(0.5);
+    svm->setP(0.1); // for EPSILON_SVR, epsilon in loss function?
+    svm->setC(0.01); // From paper, soft classifier
+    svm->setType(SVM::EPS_SVR); // C_SVC; // EPSILON_SVR; // may be also NU_SVR; // do regression task
+    svm->train(train_data, ROW_SAMPLE, Mat(labels));
     clog << "...[done]" << endl;
 
     svm->save( "my_people_detector.yml" );
@@ -381,7 +381,7 @@ void test_it( const Size & size )
     while( !end_of_process )
     {
         video >> img;
-        if( !img.data )
+        if( img.empty() )
             break;
 
         draw = img.clone();
@@ -403,7 +403,7 @@ void test_it( const Size & size )
 
 int main( int argc, char** argv )
 {
-    if( argc != 4 )
+    if( argc != 5 )
     {
         cout << "Wrong number of parameters." << endl
             << "Usage: " << argv[0] << " pos_dir pos.lst neg_dir neg.lst" << endl

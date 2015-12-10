@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+# Python 2/3 compatibility
+from __future__ import print_function
+
 import numpy as np
 import cv2
 
@@ -24,7 +27,7 @@ def draw_rects(img, rects, color):
 
 if __name__ == '__main__':
     import sys, getopt
-    print help_message
+    print(help_message)
 
     args, video_src = getopt.getopt(sys.argv[1:], '', ['cascade=', 'nested-cascade='])
     try:
@@ -38,7 +41,7 @@ if __name__ == '__main__':
     cascade = cv2.CascadeClassifier(cascade_fn)
     nested = cv2.CascadeClassifier(nested_fn)
 
-    cam = create_capture(video_src, fallback='synth:bg=../cpp/lena.jpg:noise=0.05')
+    cam = create_capture(video_src, fallback='synth:bg=../data/lena.jpg:noise=0.05')
 
     while True:
         ret, img = cam.read()
@@ -49,11 +52,12 @@ if __name__ == '__main__':
         rects = detect(gray, cascade)
         vis = img.copy()
         draw_rects(vis, rects, (0, 255, 0))
-        for x1, y1, x2, y2 in rects:
-            roi = gray[y1:y2, x1:x2]
-            vis_roi = vis[y1:y2, x1:x2]
-            subrects = detect(roi.copy(), nested)
-            draw_rects(vis_roi, subrects, (255, 0, 0))
+        if not nested.empty():
+            for x1, y1, x2, y2 in rects:
+                roi = gray[y1:y2, x1:x2]
+                vis_roi = vis[y1:y2, x1:x2]
+                subrects = detect(roi.copy(), nested)
+                draw_rects(vis_roi, subrects, (255, 0, 0))
         dt = clock() - t
 
         draw_str(vis, (20, 20), 'time: %.1f ms' % (dt*1000))

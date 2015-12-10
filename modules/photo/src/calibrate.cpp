@@ -89,8 +89,10 @@ public:
             int step_y = images[0].rows / y_points;
 
             for(int i = 0, x = step_x / 2; i < x_points; i++, x += step_x) {
-                for(int j = 0, y = step_y; j < y_points; j++, y += step_y) {
-                    sample_points.push_back(Point(x, y));
+                for(int j = 0, y = step_y / 2; j < y_points; j++, y += step_y) {
+                    if( 0 <= x && x < images[0].cols &&
+                        0 <= y && y < images[0].rows )
+                        sample_points.push_back(Point(x, y));
                 }
             }
         }

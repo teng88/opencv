@@ -47,6 +47,7 @@
 #include "opencv2/core/utility.hpp"
 #include "opencv2/core/private.hpp"
 
+#include "opencv2/imgproc.hpp"
 #include "opencv2/imgproc/imgproc_c.h"
 #include "opencv2/imgcodecs/imgcodecs_c.h"
 
@@ -71,10 +72,6 @@
     #undef min
     #undef max
     #undef abs
-#endif
-
-#ifdef HAVE_TEGRA_OPTIMIZATION
-#include "opencv2/imgcodecs/imgcodecs_tegra.hpp"
 #endif
 
 #define __BEGIN__ __CV_BEGIN__

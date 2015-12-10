@@ -3,8 +3,10 @@
 '''
 Feature-based image matching sample.
 
+Note, that you will need the https://github.com/Itseez/opencv_contrib repo for SIFT and SURF
+
 USAGE
-  find_obj.py [--feature=<sift|surf|orb|brisk>[-flann]] [ <image1> <image2> ]
+  find_obj.py [--feature=<sift|surf|orb|akaze|brisk>[-flann]] [ <image1> <image2> ]
 
   --feature  - Feature to use. Can be sift, surf, orb or brisk. Append '-flann'
                to feature name to use Flann-based matcher instead bruteforce.
@@ -23,16 +25,19 @@ FLANN_INDEX_LSH    = 6
 def init_feature(name):
     chunks = name.split('-')
     if chunks[0] == 'sift':
-        detector = cv2.SIFT()
+        detector = cv2.xfeatures2d.SIFT_create()
         norm = cv2.NORM_L2
     elif chunks[0] == 'surf':
-        detector = cv2.SURF(800)
+        detector = cv2.xfeatures2d.SURF_create(800)
         norm = cv2.NORM_L2
     elif chunks[0] == 'orb':
-        detector = cv2.ORB(400)
+        detector = cv2.ORB_create(400)
+        norm = cv2.NORM_HAMMING
+    elif chunks[0] == 'akaze':
+        detector = cv2.AKAZE_create()
         norm = cv2.NORM_HAMMING
     elif chunks[0] == 'brisk':
-        detector = cv2.BRISK()
+        detector = cv2.BRISK_create()
         norm = cv2.NORM_HAMMING
     else:
         return None, None
@@ -103,6 +108,7 @@ def explore_match(win, img1, img2, kp_pairs, status = None, H = None):
             cv2.line(vis, (x1, y1), (x2, y2), green)
 
     cv2.imshow(win, vis)
+
     def onmouse(event, x, y, flags, param):
         cur_vis = vis
         if flags & cv2.EVENT_FLAG_LBUTTON:
@@ -118,8 +124,8 @@ def explore_match(win, img1, img2, kp_pairs, status = None, H = None):
                  kp1, kp2 = kp_pairs[i]
                  kp1s.append(kp1)
                  kp2s.append(kp2)
-            cur_vis = cv2.drawKeypoints(cur_vis, kp1s, flags=4, color=kp_color)
-            cur_vis[:,w1:] = cv2.drawKeypoints(cur_vis[:,w1:], kp2s, flags=4, color=kp_color)
+            cur_vis = cv2.drawKeypoints(cur_vis, kp1s, None, flags=4, color=kp_color)
+            cur_vis[:,w1:] = cv2.drawKeypoints(cur_vis[:,w1:], kp2s, None, flags=4, color=kp_color)
 
         cv2.imshow(win, cur_vis)
     cv2.setMouseCallback(win, onmouse)
@@ -136,8 +142,8 @@ if __name__ == '__main__':
     try:
         fn1, fn2 = args
     except:
-        fn1 = '../c/box.png'
-        fn2 = '../c/box_in_scene.png'
+        fn1 = '../data/box.png'
+        fn2 = '../data/box_in_scene.png'
 
     img1 = cv2.imread(fn1, 0)
     img2 = cv2.imread(fn2, 0)

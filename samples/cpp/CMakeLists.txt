@@ -5,7 +5,7 @@
 
 SET(OPENCV_CPP_SAMPLES_REQUIRED_DEPS opencv_core opencv_imgproc opencv_flann
     opencv_imgcodecs opencv_videoio opencv_highgui opencv_ml opencv_video
-    opencv_objdetect opencv_photo opencv_nonfree opencv_features2d opencv_calib3d
+    opencv_objdetect opencv_photo opencv_features2d opencv_calib3d
     opencv_stitching opencv_videostab opencv_shape)
 
 ocv_check_dependencies(${OPENCV_CPP_SAMPLES_REQUIRED_DEPS})
@@ -15,7 +15,7 @@ if(BUILD_EXAMPLES AND OCV_DEPENDENCIES_FOUND)
   project(cpp_samples)
 
   ocv_include_directories("${OpenCV_SOURCE_DIR}/include")#for opencv.hpp
-  ocv_include_modules(${OPENCV_CPP_SAMPLES_REQUIRED_DEPS})
+  ocv_include_modules_recurse(${OPENCV_CPP_SAMPLES_REQUIRED_DEPS})
 
   if(HAVE_opencv_cudaoptflow)
     ocv_include_directories("${OpenCV_SOURCE_DIR}/modules/cudaoptflow/include")
@@ -28,6 +28,10 @@ if(BUILD_EXAMPLES AND OCV_DEPENDENCIES_FOUND)
   endif()
   if(HAVE_opencv_cudafilters)
     ocv_include_directories("${OpenCV_SOURCE_DIR}/modules/cudafilters/include")
+  endif()
+
+  if (HAVE_opencv_xfeatures2d)
+    ocv_include_directories("${OPENCV_MODULE_opencv_xfeatures2d_LOCATION}/include")
   endif()
 
   if(HAVE_opencv_ocl)
@@ -99,9 +103,13 @@ if(BUILD_EXAMPLES AND OCV_DEPENDENCIES_FOUND)
   endif()
 
   foreach(sample_filename ${cpp_samples})
-    get_filename_component(sample ${sample_filename} NAME_WE)
-    OPENCV_DEFINE_CPP_EXAMPLE(${sample}  ${sample_filename})
+    if(NOT "${sample_filename}" MATCHES "real_time_pose_estimation/")
+        get_filename_component(sample ${sample_filename} NAME_WE)
+        OPENCV_DEFINE_CPP_EXAMPLE(${sample}  ${sample_filename})
+    endif()
   endforeach()
+
+  include("tutorial_code/calib3d/real_time_pose_estimation/CMakeLists.txt")
 endif()
 
 if(INSTALL_C_EXAMPLES AND NOT WIN32)
